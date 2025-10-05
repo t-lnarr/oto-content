@@ -42,6 +42,9 @@ async def generate_post():
         "Mobil programmirleme (Flutter, React Native)",
         "Programmistler üçin maslahatlar",
         "AI we ChatGPT",
+        "Kod näme ?",
+        "Kod redaktorlary",
+        "Programmirleme barada 5 täsin fakt",
         "Kiber howpsuzlyk",
         "Code review we hatalary tapmak",
         "IDE we gurallar (VSCode, PyCharm)",
@@ -103,8 +106,9 @@ async def main():
 
     # Sabah, öğle, akşam zamanlarını ayarlıyoruz:
     scheduler.add_job(daily_post, "cron", hour=8, minute=0, timezone=TIMEZONE)   # Sabah
-    scheduler.add_job(daily_post, "cron", hour=14, minute=38, timezone=TIMEZONE)  # Öğle
-    scheduler.add_job(daily_post, "cron", hour=19, minute=0, timezone=TIMEZONE)  # Akşam
+    scheduler.add_job(daily_post, "cron", hour=12, minute=0, timezone=TIMEZONE)  # Öğle
+    scheduler.add_job(daily_post, "cron", hour=16, minute=30, timezone=TIMEZONE)  # Akşam
+    scheduler.add_job(daily_post, "cron", hour=19, minute=0, timezone=TIMEZONE)
 
 
     scheduler.start()
