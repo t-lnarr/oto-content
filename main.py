@@ -99,10 +99,11 @@ async def main():
     scheduler = AsyncIOScheduler()
 
     # Sabah, öğle, akşam zamanlarını ayarlıyoruz:
-    scheduler.add_job(daily_post, "cron", hour=8, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=9, minute=0, timezone=TIMEZONE)
     scheduler.add_job(daily_post, "cron", hour=12, minute=0, timezone=TIMEZONE)
-    scheduler.add_job(daily_post, "cron", hour=16, minute=0, timezone=TIMEZONE)
-    scheduler.add_job(daily_post, "cron", hour=20, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=15, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=18, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=21, minute=0, timezone=TIMEZONE)
 
     scheduler.start()
     print("Bot işleýär... ⏰")
