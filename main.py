@@ -60,7 +60,7 @@ async def generate_post():
     - Mazmun täze başlaýan programmistler üçin peýdaly maglumat we maslahatlar berýän bolsun.
       (meselem: “Python üçin haýsy sahypalary öwrenmeli?”, “Hangi gurallary ulanmaly?”, “Kody synap görmek üçin täze programmistler üçin amallar”)
     - Emojiler bilen bezelen bolsun.
-    - Ahyrynda 2–3 hashtag goş (#programlama, #öwren, #yazılım)
+    - Ahyrynda 2–3 hashtag goş (#programmirleme, #öwren, #yazılım, #ai, #telegrambot)
     - Iň soňunda bu ýazgyny "🤖 AI tarapyndan döredildi." diýip tamamla.
 
     Maksimum 6 setirlik post ýaz.
@@ -103,7 +103,7 @@ async def main():
 
     # Sabah, öğle, akşam zamanlarını ayarlıyoruz:
     scheduler.add_job(daily_post, "cron", hour=8, minute=0, timezone=TIMEZONE)   # Sabah
-    scheduler.add_job(daily_post, "cron", hour=14, minute=30, timezone=TIMEZONE)  # Öğle
+    scheduler.add_job(daily_post, "cron", hour=14, minute=33, timezone=TIMEZONE)  # Öğle
     scheduler.add_job(daily_post, "cron", hour=19, minute=0, timezone=TIMEZONE)  # Akşam
 
 
