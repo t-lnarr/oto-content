@@ -103,7 +103,7 @@ async def main():
 
     # Sabah, öğle, akşam zamanlarını ayarlıyoruz:
     scheduler.add_job(daily_post, "cron", hour=8, minute=0, timezone=TIMEZONE)   # Sabah
-    scheduler.add_job(daily_post, "cron", hour=14, minute=3, timezone=TIMEZONE)  # Öğle
+    scheduler.add_job(daily_post, "cron", hour=14, minute=12, timezone=TIMEZONE)  # Öğle
     scheduler.add_job(daily_post, "cron", hour=19, minute=0, timezone=TIMEZONE)  # Akşam
 
 
