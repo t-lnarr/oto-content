@@ -139,7 +139,7 @@ async def daily_post():
 async def main():
     scheduler = AsyncIOScheduler()
     scheduler.add_job(daily_post, "cron", hour=8, minute=0, timezone=TIMEZONE)
-    scheduler.add_job(daily_post, "cron", hour=12, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=13, minute=29, timezone=TIMEZONE)
     scheduler.add_job(daily_post, "cron", hour=16, minute=0, timezone=TIMEZONE)
     scheduler.add_job(daily_post, "cron", hour=18, minute=0, timezone=TIMEZONE)
     scheduler.add_job(daily_post, "cron", hour=21, minute=0, timezone=TIMEZONE)
