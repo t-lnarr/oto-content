@@ -27,7 +27,7 @@ konular = [
     "Web Programmirleme", "SQL başlangıç üçin", "NoSQL bazalar", "Frontend vs Backend",
     "Mobil programmirleme (Flutter, React Native)", "Programmistler üçin maslahatlar",
     "AI we ChatGPT", "Kiber howpsuzlyk", "Code review we hatalary tapmak",
-    "IDE we gurallar (VSCode, PyCharm)", "Öwrenmek üçin saytlar (w3schools, freecodecamp, Codecademy)"
+    "IDE we gurallar (VSCode, PyCharm)", "Programirleme Öwrenmek üçin saytlar", "Programirleme bölümleri"
 ]
 
 # --- Gemini ile post üretimi ---
@@ -138,9 +138,10 @@ async def daily_post():
 # --- Zamanlayıcı ---
 async def main():
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(daily_post, "cron", hour=8, minute=0, timezone=TIMEZONE)
-    scheduler.add_job(daily_post, "cron", hour=13, minute=29, timezone=TIMEZONE)
-    scheduler.add_job(daily_post, "cron", hour=16, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=6, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=9, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=12, minute=0, timezone=TIMEZONE)
+    scheduler.add_job(daily_post, "cron", hour=15, minute=0, timezone=TIMEZONE)
     scheduler.add_job(daily_post, "cron", hour=18, minute=0, timezone=TIMEZONE)
     scheduler.add_job(daily_post, "cron", hour=21, minute=0, timezone=TIMEZONE)
 
