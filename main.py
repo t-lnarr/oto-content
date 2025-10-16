@@ -162,7 +162,7 @@ async def main():
     # 7 kez günde post gönder
     hours = [6, 9, 12, 15, 19, 21, 23]
     for hour in hours:
-        scheduler.add_job(daily_post, "cron", hour=hour, minute=51, timezone=TIMEZONE)
+        scheduler.add_job(daily_post, "cron", hour=hour, minute=56, timezone=TIMEZONE)
     
     scheduler.start()
     print("🤖 Bot çalışıyor...")
