@@ -15,9 +15,13 @@ CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 
 konular = [
-    "Python dili", "JavaScript", "HTML we CSS", "Django", "Flask", "FastAPI", 
-    "Pascal ABC", "C++ dili", "C# dili", "Algoritmalar", "Database",
-    "Web Programmirleme", "AI we ChatGPT", "Kiber howpsuzlyk"
+    "Python dili", "JavaScript", "HTML we CSS", "Django", "Flask", "FastAPI", "Türkmenistanda we dünýäde programirleme ugury", "Programirlemede Emeli aňyň orny", "Emeli aňy işimize garmak",
+    "Pascal ABC", "C++ dili", "C# dili", "Algoritmalar", "Database", "Iň gyzykly faktlar", "Taýýar templatelar", "Taýýar kodlary tapyp boljak ýerler", "Random tema boýunça faktlar",
+    "Web Programmirleme", "AI we ChatGPT", "Kiber howpsuzlyk", "Git we Github", "Programistiň peýdalanjak saýtlary", "Web dizaýnda ökdelemek", "Web dizaýnerçylyk üçin peýdaly saýtlar",
+    "Gaça durmaly ýalňyşlyklar", "Her bir programistyň ulanjak tehnologiýalary", "Programmistyň bir güni", "Näme üçin bu ugury saýlaýmaly", "Programirleme ugurlary, nädip saýlamaly ?",
+    "Programirleme barada kinolar", "VPN ?", "Programmirleme barada başlangyç, orta we ýokary lewel gönükmeler", "Mac vs Windows vs Linux ?", "Täze başlanlar üçin yzarlamaly ýol",
+    "Ilkinji çylşyrymly proýekt", "Taslama bäsleşikleri", "AI kod ýazdyrmak", "AI bilen programmist bolmak", "Ai-da Ai", "Edip boljak idealar", "Programmirleme ugrundan nädip çörek iýmeli ?",
+    "Programmirst milýarderler", "Has döredijilikli nädip bolunar ?", "Kompýuterde işlenilende edilýän ýalňyşlyklar!", "Özüňi tanatmak"
 ]
 
 # --- Gemini ile post üretimi ---
@@ -26,9 +30,9 @@ async def generate_post():
     prompt = f"""
     Türkmen dilinde, programmirleme barada gyzyklanýanlara {konu} baradaky gysga, 
     gyzykly we öwrediji bir post ýazgy döredip ber.
-    Post dişe netije hökümünde bolsun – giriş sözleri bolmasyn.
-    - Temanyň ady we esasy ýazgy bar bolsun
-    - 4–6 setirlik düşündiriş, gülküñç, gyzykly we bir zat öwrediji mazmun bolsun
+    Post diňe netije hökümünde bolsun – giriş sözleri bolmasyn.
+    - Haýran galdyryjy temanyň ady we esasy ýazgy bar bolsun
+    - 6–8 setirlik düşündiriş, gülkinç, gyzykly we öwrediji mazmun bolsun
     - Emojiler bilen bezelen bolsun
     - Ahyrynda tema degişli 2–3 hashtag (#teknologiya, #python, #web)
     - Işi soňunda "🤖 AI tarapyndan döredildi."
