@@ -21,7 +21,7 @@ konular = [
     "Gaça durmaly ýalňyşlyklar", "Her bir programistyň ulanjak tehnologiýalary", "Programmistyň bir güni", "Näme üçin bu ugury saýlaýmaly", "Programirleme ugurlary, nädip saýlamaly ?",
     "Programirleme barada kinolar", "VPN ?", "Programmirleme barada başlangyç, orta we ýokary lewel gönükmeler", "Mac vs Windows vs Linux ?", "Täze başlanlar üçin yzarlamaly ýol",
     "Ilkinji çylşyrymly proýekt", "Taslama bäsleşikleri", "AI kod ýazdyrmak", "AI bilen programmist bolmak", "Ai-da Ai", "Edip boljak idealar", "Programmirleme ugrundan nädip çörek iýmeli ?",
-    "Programmirst milýarderler", "Has döredijilikli nädip bolunar ?", "Kompýuterde işlenilende edilýän ýalňyşlyklar!", "Özüňi tanatmak"
+    "Programmirst milýarderler", "Has döredijilikli nädip bolunar ?", "Kompýuterde işlenilende edilýän ýalňyşlyklar!", "Özüňi tanatmak", "Online öwrenmek"
 ]
 
 # --- Gemini ile post üretimi ---
