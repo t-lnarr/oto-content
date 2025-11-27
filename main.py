@@ -463,11 +463,11 @@ async def main():
 
     # Tüm zamanlanmış görevleri başlat
     tasks = [
-        scheduled_post(bot, 9, 0, "fun_fact"),      # 09:00
-        scheduled_post(bot, 13, 0, "python_lesson"), # 13:00
-        scheduled_post(bot, 13, 30, "python_task"),  # 13:30
-        scheduled_post(bot, 19, 0, "daily_tip"),     # 19:00
-        scheduled_post(bot, 21, 0, "quiz"),          # 21:00
+        scheduled_post(bot, 18, 0, "fun_fact"),      # 09:00
+        scheduled_post(bot, 22, 0, "python_lesson"), # 13:00
+        scheduled_post(bot, 22, 30, "python_task"),  # 13:30
+        scheduled_post(bot, 1, 0, "daily_tip"),     # 19:00
+        scheduled_post(bot, 6, 0, "quiz"),          # 21:00
     ]
 
     print("✅ Tüm zamanlamalar aktif!")
