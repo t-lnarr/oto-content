@@ -1,485 +1,369 @@
-"""
-Telegram Kanal Botu - Günlük İçerik Paylaşımı
-Özellikler:
-- Günde 4 post (09:00, 13:00, 13:30, 19:00)
-- Günlük test/anket (21:00)
-- Gemini API ile içerik üretimi
-- Türkmence postlar
-"""
-
-import asyncio
 import os
-import re
-from datetime import datetime, time
-from telegram import Bot, Poll
-from telegram.constants import ParseMode
+import logging
+import asyncio
+import json
+import psycopg2
+from datetime import datetime
+from pytz import timezone
 import google.generativeai as genai
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Poll
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-# ==================== YAPILANDIRMA ====================
-
-# API Anahtarları (ortam değişkenlerinden alınacak)
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# --- KONFİGÜRASYON ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 CHANNEL_ID = os.getenv("CHANNEL_ID")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+DATABASE_URL = os.getenv("DATABASE_URL")
+TZ = timezone('Asia/Ashgabat')  # Türkmenistan Saati
 
-# Gemini API'yi yapılandır
+# --- LOGGING ---
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# --- GEMINI AI KURULUMU ---
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')
+model = genai.GenerativeModel('gemini-2.5-flash-preview-09-2025') # Güncel model
 
-# ==================== KONU LİSTELERİ ====================
-
-PYTHON_KONULAR = [
-    "Python Näme we Näme üçin öwrenmeli?",
-    "Ilkinji Python programmamyz we Print funksiýasy",
-    "Üýtgeýänler we maglumat görnüşleri",
-    "Matematiki amallar we operatorlar",
-    "Setir (String) amallary",
-    "Sanaw (List) maglumat gurluşy",
-    "Şertli aňlatmalar (if-elif-else)",
-    "Aýlanmalar: For aýlanmasy",
-    "Aýlanmalar: While aýlanmasy",
-    "Funksiýalar - Esasy düşünjeler",
-    "Funksiýalar - Parametrler we gaýtaryş bahalary",
-    "Sözlük (Dictionary) maglumat gurluşy",
-    "Tuple we Set maglumat gurluşlary",
-    "Faýl amallary - Okamak",
-    "Faýl amallary - Ýazmak",
-    "Ýalňyşlyk dolandyryşy (Try-Except)",
-    "Modullar we Import",
-    "Sanaw düşünjeleri (List Comprehension)",
-    "Lambda funksiýalary",
-    "Obýekt ugrukdyrlan programmirlemek - Synplar",
-    "Obýekt ugrukdyrlan programmirlemek - Miras",
-    "Kitaphanalar: requests bilen Web haýyşlary",
-    "Kitaphanalar: datetime bilen Sene/Wagt",
-    "JSON maglumatlary bilen işlemek",
-    "API ulanylyşy we integrasiýa",
+# --- PYTHON ÖĞRENİYORUM SERİSİ KONULARI ---
+PYTHON_TOPICS = [
+    "Python näme? Giriş we gurnamak",
+    "Ilkinji kodyň: Hello World we print()",
+    "Üýtgeýänler (Variables) we maglumat görnüşleri (Data Types)",
+    "Sanlar (Numbers) we matematiki amallar",
+    "Setirler (Strings) we olar bilen işlemek",
+    "Listler (Lists) - Giriş",
+    "Dictionary (Sözlükler) we Tuples",
+    "Şertli operatorlar: If, Elif, Else",
+    "For Loop (Gaýtalanýan amallar)",
+    "While Loop",
+    "Funksiýalar (Functions) - Giriş",
+    "Funksiýalarda parametrler we return",
+    "Modullar we kitaphanalar (Modules)",
+    "Hata dolandyryşy (Try, Except)",
+    "Faýl amallary (Okamak we ýazmak)",
+    "Klaslar we Obyektler (OOP Giriş)",
+    # Buraya daha fazla konu ekleyebilirsin
 ]
 
-TEST_KONULAR = [
-    "Python Esaslary",
-    "Üýtgeýänler we Maglumat Görnüşleri",
-    "Matematiki Amallar",
-    "Setir Amallary",
-    "Sanaw Amallary",
-    "Şertli Aňlatmalar",
-    "Aýlanmalar",
-    "Funksiýalar",
-    "Sözlükler",
-    "Faýl Amallary",
-]
+# --- VERİTABANI İŞLEMLERİ ---
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL)
 
-# Güncel konu indeksleri
-current_python_index = 0
-current_test_index = 0
+def init_db():
+    """Tabloları oluşturur"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Ayarlar tablosu (Python serisi takibi için)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key VARCHAR(50) PRIMARY KEY,
+            value INTEGER
+        );
+    """)
+    # Varsayılan başlangıç değerini ata
+    cur.execute("INSERT INTO settings (key, value) VALUES ('python_topic_index', 0) ON CONFLICT DO NOTHING;")
+    
+    # Bekleyen postlar tablosu (Draftlar)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pending_posts (
+            type VARCHAR(20) PRIMARY KEY, -- 'morning', 'noon', 'evening', 'quiz'
+            content TEXT,
+            poll_data JSONB, -- Quiz için soru/cevap datası
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
-# ==================== YARDIMCI FONKSİYONLAR ====================
+def get_topic_index():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM settings WHERE key = 'python_topic_index'")
+    idx = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return idx
 
-def get_next_python_topic():
-    """Sıradaki Python konusunu döndürür"""
-    global current_python_index
-    topic = PYTHON_KONULAR[current_python_index % len(PYTHON_KONULAR)]
-    bolum_no = (current_python_index % len(PYTHON_KONULAR)) + 1
-    current_python_index += 1
-    return topic, bolum_no
+def increment_topic_index():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE settings SET value = value + 1 WHERE key = 'python_topic_index'")
+    conn.commit()
+    cur.close()
+    conn.close()
 
-def get_next_test_topic():
-    """Sıradaki test konusunu döndürür"""
-    global current_test_index
-    topic = TEST_KONULAR[current_test_index % len(TEST_KONULAR)]
-    current_test_index += 1
-    return topic
+def save_draft(post_type, content, poll_data=None):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    poll_json = json.dumps(poll_data) if poll_data else None
+    cur.execute("""
+        INSERT INTO pending_posts (type, content, poll_data) 
+        VALUES (%s, %s, %s)
+        ON CONFLICT (type) 
+        DO UPDATE SET content = EXCLUDED.content, poll_data = EXCLUDED.poll_data;
+    """, (post_type, content, poll_json))
+    conn.commit()
+    cur.close()
+    conn.close()
 
-async def generate_content(prompt):
-    """Gemini API ile içerik üretir"""
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        print(f"Gemini API hatası: {e}")
-        return None
+def get_draft(post_type):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT content, poll_data FROM pending_posts WHERE type = %s", (post_type,))
+    res = cur.fetchone()
+    cur.close()
+    conn.close()
+    return res
 
-# ==================== İÇERİK OLUŞTURMA FONKSİYONLARI ====================
-
-async def create_fun_fact():
-    """09:00 - Günün Eğlenceli Bilgisi"""
-    prompt = """
-    Türkmence dilinde gysgaça we düşnükli bir gyzykly maglumat ýaz (5-10 setir).
-    Tehnologiýa, ylym, taryh ýa-da gündelik durmuş bilen baglanyşykly gyzykly maglumat bolsun.
-    Emoji ulan, ýöne köp bolmasyn (2-3 emoji ýeterlik).
-    Ahyrynda temanyň laýyk 2-3 hashtag goş.
-
-    Format:
-    🌟 [Başlyk]
-
-    [Mazmun]
-
-    #hashtag1 #hashtag2
-    """
-    content = await generate_content(prompt)
-    return content if content else "🌟 Bu gün ajaýyp gün! Gyzykly maglumatlar ýakyn wagtda... #GyzyklyMaglumat #Öwrenýärin"
-
-async def create_python_lesson():
-    """13:00 - Python Dersi"""
-    topic, bolum_no = get_next_python_topic()
-    prompt = f"""
-    Türkmence dilinde "Python Noldan Öwrenýärin" seriýasy üçin ders ýaz.
-    Tema: {topic}
-    Bölüm Belgisi: {bolum_no}
-
-    Format:
-    📚 Python Noldan Öwrenýärin - Bölüm {bolum_no}
-    🎯 Tema: {topic}
-
-    [5-10 setir gysgaça, düşnükli we gyzykly düşündiriş]
-    [Zerur bolsa gysgaça kod mysaly]
-
-    💡 Maslahat: [1 setir peýdaly maslahat]
-
-    #Python #Programmirlemek #Öwrenýärin
-
-    Örän uzyn bolmasyn, düşnükli we gyzykly bolsun. Emoji ulan, ýöne köp bolmasyn.
-    Kod mysallaryny ```python ``` bloklarynda ýaz.
-    """
-    content = await generate_content(prompt)
-    return content if content else f"📚 Python Noldan Öwrenýärin - Bölüm {bolum_no}\n🎯 Tema: {topic}\n\nMazmun taýýarlanýar... #Python #Programmirlemek"
-
-async def create_python_task():
-    """13:30 - Python Mini Görev"""
-    topic, _ = get_next_python_topic()
-    current_python_index -= 1  # Aynı konuyu kullanmak için geri al
-
-    prompt = f"""
-    Türkmence dilinde "{topic}" temasyna laýyk mini Python meşgulyny ýaz.
-
-    Format:
-    💪 Şu Günüň Meşguly
-
-    [Meşgulyň düşündirişi - 2-3 setir]
-
-    ```python
-    # Mysal kod ýa-da çözgüt ýol görkezijisi
-    ```
-
-    [Ruhlandyryjy gysgaça söz]
-
-    #PythonMeşguly #Tejribe #Kodlaşdyrmak
-
-    Gysgaça, düşnükli we ruhlandyryjy bolsun. Emoji ulan.
-    """
-    content = await generate_content(prompt)
-    return content if content else f"💪 Şu Günüň Meşguly\n\n{topic} temasyny tejribe edeliň!\n\n#PythonMeşguly #Tejribe"
-
-async def create_daily_tip():
-    """19:00 - Günün Tüyosu"""
-    prompt = """
-    Türkmence dilinde programmirlemek, tehnologiýa ýa-da şahsy ösüş bilen baglanyşykly:
-    - Günüň maslahaty
-    - Mini taslama pikiri
-    - Ruhlandyryjy hekaýa
-
-    Şulardan birini saýla we ýaz (5-10 setir).
-    Bilim beriji, ylham beriji we gysgaça bolsun.
-    Emoji we hashtag ulan.
-
-    Format:
-    💡 [Başlyk]
-
-    [Mazmun]
-
-    #hashtag1 #hashtag2
-    """
-    content = await generate_content(prompt)
-    return content if content else "💡 Günüň Maslahaty\n\nHer gün birneme öňe gidýäris! #Ruhlandyryş #Ösüş"
-
-async def create_quiz():
-    """21:00 - Günlük Test/Anket"""
-    topic = get_next_test_topic()
-
-    # Daha basit ve net prompt
-    prompt = f"""
-Türkmence dilinde "{topic}" barada test soragyny döret.
-
-DÜZGÜNLER:
-1. Sorag GYSGAJYK bolmaly (1 setir)
-2. Kod mysallary BAR BOLSA, diňe düz tekst (markdown ýok, ``` ýok)
-3. Her wariant 1 setirde bolmaly
-4. 4 wariant bolmaly (A, B, C, D)
-5. Dogry jogaby görkezmeli
-
-FORMAT (ÜÝTGETME):
-Sorag: [gysgajyk sorag]
-A) [wariant 1]
-B) [wariant 2]
-C) [wariant 3]
-D) [wariant 4]
-Dogry: [A ýa-da B ýa-da C ýa-da D]
-
-MYSAL 1:
-Sorag: Python-da üýtgeýäni nädip yglan edýäris?
-A) let x = 10
-B) x = 10
-C) var x = 10
-D) int x = 10
-Dogry: B
-
-MYSAL 2:
-Sorag: print() funksiýasy näme iş edýär?
-A) Faýl açýar
-B) Maglumat çap edýär
-C) Hasaplaýar
-D) Programmany ýapýar
-Dogry: B
-
-MYSAL 3:
-Sorag: 5 + 3 * 2 netije näçe?
-A) 16
-B) 11
-C) 13
-D) 10
-Dogry: B
-
-Indi "{topic}" barada şuňa meňzeş test döret. ÝÖNEKEÝ WE GYSGAJYK!
-"""
-
-    content = await generate_content(prompt)
-
-    if not content:
-        return _get_fallback_quiz(topic)
-
-    # Çok daha basit parse
-    try:
-        print(f"\n📋 Quiz mazmun:\n{content}\n")
-
-        # Tüm satırları temizle
-        lines = content.strip().split('\n')
-
-        question = ""
-        options = []
-        correct = ""
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # Soruyu bul
-            if line.startswith("Sorag:"):
-                question = line.replace("Sorag:", "").strip()
-
-            # Seçenekleri bul (A), B), C), D) ile başlayanlar)
-            elif re.match(r'^[A-D]\)', line):
-                option = line[2:].strip()  # "A) " sonrasını al
-                # Kod bloklarını temizle
-                option = option.replace('```python', '').replace('```', '').strip()
-                if option:
-                    options.append(option)
-
-            # Doğru cevabı bul
-            elif line.startswith("Dogry"):
-                # "Dogry:", "Dogry jogap:", vb hepsini yakala
-                correct_part = line.split(':', 1)[-1].strip().upper()
-                if correct_part and correct_part[0] in 'ABCD':
-                    correct = correct_part[0]
-
-        # Kontrol
-        if not question or len(options) != 4 or not correct:
-            raise ValueError(f"Parse edilmedi: sorag={bool(question)}, wariant={len(options)}, dogry={bool(correct)}")
-
-        correct_index = ord(correct) - ord('A')
-
-        print(f"✅ Parse başarılı:")
-        print(f"   Sorag: {question[:50]}...")
-        print(f"   Wariantlar: {len(options)}")
-        print(f"   Dogry: {correct} (indeks: {correct_index})")
-
-        return {
-            "question": f"📝 {topic} Testi\n\n{question}",
-            "options": options,
-            "correct": correct_index
-        }
-
-    except Exception as e:
-        print(f"❌ Parse hatasy: {e}")
-        print(f"   Mazmun: {content[:300]}")
-        return _get_fallback_quiz(topic)
-
-
-def _get_fallback_quiz(topic):
-    """Yedek test soruları"""
-    fallback_quizzes = {
-        "Python Esaslary": {
-            "question": f"📝 {topic} Testi\n\nPython näme görnüşli programmirlemek dili?",
-            "options": [
-                "Kompilýasiýa edilen dil",
-                "Interpretasiýa edilen dil",
-                "Assemblý dili",
-                "Maşyn dili"
-            ],
-            "correct": 1
-        },
-        "Üýtgeýänler we Maglumat Görnüşleri": {
-            "question": f"📝 {topic} Testi\n\nHaýsy dürs Python-da üýtgeýän yglan edýär?",
-            "options": [
-                "let saýla = 10",
-                "var saýla = 10",
-                "saýla = 10",
-                "int saýla = 10"
-            ],
-            "correct": 2
-        },
-        "Matematiki Amallar": {
-            "question": f"📝 {topic} Testi\n\n10 % 3 amalynyň netijesi näçe?",
-            "options": [
-                "3",
-                "1",
-                "0",
-                "3.33"
-            ],
-            "correct": 1
-        },
-        "Setir Amallary": {
-            "question": f"📝 {topic} Testi\n\nHello Dünýä setiriniň uzynlygy näçe?",
-            "options": [
-                "11",
-                "10",
-                "12",
-                "13"
-            ],
-            "correct": 0
-        },
-        "Sanaw Amallary": {
-            "question": f"📝 {topic} Testi\n\nSanawa element goşmak üçin haýsy usul ulanylýar?",
-            "options": [
-                "add()",
-                "append()",
-                "insert()",
-                "push()"
-            ],
-            "correct": 1
-        },
+# --- GEMINI İÇERİK ÜRETİMİ ---
+async def generate_content_ai(post_type, topic=None):
+    """Gemini API kullanarak içerik üretir"""
+    
+    system_prompt = "Sen Türkmen dilinde ýazılım we tehnologiýa barada bilermen kömekçi. Ähli jogaplaryňy Türkmen dilinde (Latyn elipbiýinde) bermeli."
+    
+    prompts = {
+        "morning": """
+            Ertiriň haýyrly bolsun! Programmirleme, yazılım ýa-da tehnologiýa barada gysga, eglenceli, bilesigeliji (curiosity) fakt ýa-da peýdaly maslahat (tip) ýaz. 
+            Tekst gysga we özüne çekiji bolsun. 
+            Emojileri köp ulan. 
+            Soňunda 2-3 sany degişli hashtag goş.
+        """,
+        "noon": f"""
+            "Sıfırdan Python Öwrenýäris" seriýasy üçin post taýýarla.
+            Bu günki mowzuk: "{topic}".
+            
+            Şu formatda bolmaly:
+            1. Mowzugy düşnükli we sada dilde düşündir.
+            2. Hökmany suratda kiçijik kod mysalyny (code snippet) goş.
+            3. Emojiler bilen bezeg ber.
+            4. Soňunda #python #tutorial #turkmenistan hashtaglerini ulan.
+        """,
+        "evening": """
+            Agşamyňyz haýyrly bolsun! Programmirleme bilen baglanyşykly kiçijik bir "Challenge" ýa-da "Alıştırma" (Practice) ýaz.
+            Derejesi tötänleýin bolsun (Aňsat, Orta ýa-da Kyn).
+            Okyjylary teswirlerde (kommentariýalarda) jogap bermäge çagyr.
+            Emojiler ulan. Hashtag goş.
+        """,
+        "quiz": f"""
+            Bu günki öwrenilen Python mowzugy "{topic}" barada bir sany test soragyny taýýarla.
+            
+            Muny diňe JSON formatynda bermeli. Başga hiç hili söz ýazma.
+            Format şeýle bolsun:
+            {{
+                "question": "Soragyň teksti (Türkmençe)",
+                "options": ["Jogap A", "Jogap B", "Jogap C", "Jogap D"],
+                "correct_option_id": 0,
+                "explanation": "Näme üçin dogrydygyny gysgaça düşündir."
+            }}
+            (correct_option_id: 0 bolsa birinji jogap dogry, 1 bolsa ikinji, we ş.m.)
+        """
     }
 
-    # Eğer konuya özel yedek varsa onu kullan
-    if topic in fallback_quizzes:
-        return fallback_quizzes[topic]
-
-    # Yoksa genel yedek
-    return {
-        "question": f"📝 {topic} Testi\n\nPython öwrenmek näme üçin möhüm?",
-        "options": [
-            "Ýönekeý we güýçli dil",
-            "Diňe oýunlar üçin",
-            "Köne tehnologiýa",
-            "Diňe professionallar üçin"
-        ],
-        "correct": 0
-    }
-
-# ==================== GÖNDERİM FONKSİYONLARI ====================
-
-async def send_post(bot, content):
-    """Kanala post gönderir"""
     try:
-        await bot.send_message(
-            chat_id=CHANNEL_ID,
-            text=content,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        print(f"✅ Post gönderildi: {datetime.now()}")
+        user_prompt = prompts[post_type]
+        if post_type == "quiz":
+            response = model.generate_content(system_prompt + " " + user_prompt, generation_config={"response_mime_type": "application/json"})
+            return json.loads(response.text)
+        else:
+            response = model.generate_content(system_prompt + " " + user_prompt)
+            return response.text
     except Exception as e:
-        print(f"❌ Post gönderme hatası: {e}")
+        logger.error(f"AI Error ({post_type}): {e}")
+        return "Bagyşlaň, AI bir säwlik goýberdi. Gaýtadan synanşyň."
 
-async def send_poll(bot, quiz_data):
-    """Kanala anket gönderir"""
-    try:
-        await bot.send_poll(
-            chat_id=CHANNEL_ID,
-            question=quiz_data["question"],
-            options=quiz_data["options"],
+# --- BOT HANDLERS & TASKS ---
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text("Salam Admin! Bot işjeň. Gündelik tertip boýunça işlemäge taýýar.")
+
+# 1. Draft Oluşturma ve Admine Gönderme Fonksiyonu
+async def task_prepare_draft(context: ContextTypes.DEFAULT_TYPE):
+    job_data = context.job.data
+    post_type = job_data['type']
+    
+    topic = None
+    if post_type in ['noon', 'quiz']:
+        idx = get_topic_index()
+        # Eğer konular bittiyse başa dön veya dur (burada başa dönüyoruz)
+        safe_idx = idx % len(PYTHON_TOPICS)
+        topic = PYTHON_TOPICS[safe_idx]
+
+    # AI'dan içerik al
+    logger.info(f"Generating content for {post_type}...")
+    ai_result = await generate_content_ai(post_type, topic)
+    
+    content = ""
+    poll_data = None
+
+    if post_type == "quiz":
+        content = ai_result['explanation'] # Quiz açıklamasını içerik olarak saklayalım veya boş bırakalım
+        poll_data = ai_result
+    else:
+        content = ai_result
+    
+    # Veritabanına kaydet
+    save_draft(post_type, content, poll_data)
+
+    # Admine önizleme gönder
+    keyboard = [[InlineKeyboardButton("♻️ Üýtget (Regenerate)", callback_data=f"regen_{post_type}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    msg_prefix = f"📢 **YAYINA 1 SAAT VAR ({post_type.upper()})**\n\n"
+    
+    if post_type == "quiz":
+        # Quiz önizlemesi
+        q = poll_data
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"{msg_prefix}Soru: {q['question']}\nCevaplar: {q['options']}\nDoğru: {q['options'][q['correct_option_id']]}")
+        await context.bot.send_poll(
+            chat_id=ADMIN_ID,
+            question=q['question'],
+            options=q['options'],
             type=Poll.QUIZ,
-            correct_option_id=quiz_data["correct"],
-            is_anonymous=True
+            correct_option_id=q['correct_option_id'],
+            is_anonymous=False,
+            reply_markup=reply_markup
         )
-        print(f"✅ Anket gönderildi: {datetime.now()}")
-    except Exception as e:
-        print(f"❌ Anket gönderme hatası: {e}")
+    else:
+        # Normal post önizlemesi
+        await context.bot.send_message(
+            chat_id=ADMIN_ID, 
+            text=msg_prefix + content, 
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
-# ==================== ZAMANLAMA ====================
-
-async def scheduled_post(bot, hour, minute, post_type):
-    """Belirtilen saatte post gönderir"""
-    while True:
-        now = datetime.now()
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-
-        if now >= target:
-            # Bugün için geçti, yarına planla
-            from datetime import timedelta
-            target = target + timedelta(days=1)
-
-        wait_seconds = (target - now).total_seconds()
-        print(f"⏰ {post_type} için bekleniyor: {wait_seconds/3600:.1f} saat")
-
-        await asyncio.sleep(wait_seconds)
-
-        # İçerik oluştur ve gönder
-        if post_type == "fun_fact":
-            content = await create_fun_fact()
-            await send_post(bot, content)
-        elif post_type == "python_lesson":
-            content = await create_python_lesson()
-            await send_post(bot, content)
-        elif post_type == "python_task":
-            content = await create_python_task()
-            await send_post(bot, content)
-        elif post_type == "daily_tip":
-            content = await create_daily_tip()
-            await send_post(bot, content)
-        elif post_type == "quiz":
-            quiz_data = await create_quiz()
-            await send_poll(bot, quiz_data)
-
-        # 24 saat bekle
-        await asyncio.sleep(86400)
-
-# ==================== ANA FONKSİYON ====================
-
-async def main():
-    """Ana bot fonksiyonu"""
-    print("🤖 Telegram Kanal Botu başlatılıyor...")
-    print(f"📢 Kanal: {CHANNEL_ID}")
-
-    # Bot'u oluştur
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-
-    # Bot bilgilerini kontrol et
-    try:
-        bot_info = await bot.get_me()
-        print(f"✅ Bot bağlandı: @{bot_info.username}")
-    except Exception as e:
-        print(f"❌ Bot bağlantı hatası: {e}")
+# 2. Kanalda Yayınlama Fonksiyonu
+async def task_publish_post(context: ContextTypes.DEFAULT_TYPE):
+    post_type = context.job.data['type']
+    
+    draft = get_draft(post_type)
+    if not draft:
+        logger.error(f"No draft found for {post_type}")
         return
 
-    # Tüm zamanlanmış görevleri başlat
-    tasks = [
-        scheduled_post(bot, 18, 0, "fun_fact"),      # 09:00
-        scheduled_post(bot, 22, 0, "python_lesson"), # 13:00
-        scheduled_post(bot, 22, 30, "python_task"),  # 13:30
-        scheduled_post(bot, 1, 0, "daily_tip"),     # 19:00
-        scheduled_post(bot, 6, 0, "quiz"),          # 21:00
-    ]
+    content, poll_data = draft
 
-    print("✅ Tüm zamanlamalar aktif!")
-    print("🚀 Bot çalışıyor... (Durdurmak için Ctrl+C)")
+    try:
+        if post_type == "quiz":
+            poll_json = poll_data # Zaten jsonb olarak geliyor (psycopg2 dict döndürür)
+            await context.bot.send_poll(
+                chat_id=CHANNEL_ID,
+                question=poll_json['question'],
+                options=poll_json['options'],
+                type=Poll.QUIZ,
+                correct_option_id=poll_json['correct_option_id'],
+                is_anonymous=True # Kanalda anonim olsun
+            )
+            # Quiz yayınlandıktan sonra konuyu ilerlet
+            increment_topic_index()
+        else:
+            await context.bot.send_message(chat_id=CHANNEL_ID, text=content)
+            
+        logger.info(f"Published {post_type}")
+    except Exception as e:
+        logger.error(f"Publish failed: {e}")
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"⚠️ Hata: {post_type} yayınlanamadı.\n{e}")
 
-    # Tüm görevleri paralel çalıştır
-    await asyncio.gather(*tasks)
+# 3. Yeniden Oluşturma (Regenerate) Butonu
+async def regenerate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("Täzeden döredilýär...")
+    
+    data = query.data
+    post_type = data.split("_")[1] # regen_morning -> morning
+
+    topic = None
+    if post_type in ['noon', 'quiz']:
+        idx = get_topic_index()
+        topic = PYTHON_TOPICS[idx % len(PYTHON_TOPICS)]
+
+    # Yeni içerik üret
+    ai_result = await generate_content_ai(post_type, topic)
+    
+    content = ""
+    poll_data = None
+    if post_type == "quiz":
+        content = ai_result['explanation']
+        poll_data = ai_result
+    else:
+        content = ai_result
+    
+    # DB Güncelle
+    save_draft(post_type, content, poll_data)
+
+    # Mesajı Güncelle (Admin panelinde)
+    keyboard = [[InlineKeyboardButton("♻️ Üýtget (Regenerate)", callback_data=f"regen_{post_type}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    try:
+        if post_type == "quiz":
+            # Poll'lar düzenlenemez, o yüzden eskiyi silip yeni atıyoruz
+            await query.message.delete()
+            q = poll_data
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"📢 **YENİLENDİ ({post_type.upper()})**\nSoru: {q['question']}\nDoğru: {q['options'][q['correct_option_id']]}")
+            await context.bot.send_poll(
+                chat_id=ADMIN_ID,
+                question=q['question'],
+                options=q['options'],
+                type=Poll.QUIZ,
+                correct_option_id=q['correct_option_id'],
+                reply_markup=reply_markup
+            )
+        else:
+            await query.edit_message_text(
+                text=f"📢 **YENİLENDİ ({post_type.upper()})**\n\n{content}",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+    except Exception as e:
+        logger.error(f"Edit message failed: {e}")
+
+# --- MAIN SETUP ---
+
+def main():
+    # Veritabanını başlat
+    init_db()
+
+    # Uygulamayı oluştur
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Handlerlar
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(regenerate_callback, pattern="^regen_"))
+
+    # Scheduler (Zamanlayıcı)
+    scheduler = AsyncIOScheduler(timezone=TZ)
+    
+    # --- ZAMANLAMA AYARLARI (SAATLER) ---
+    # Sabah: 08:00 Hazırla -> 09:00 Paylaş
+    scheduler.add_job(task_prepare_draft, 'cron', hour=8, minute=0, data={'type': 'morning'})
+    scheduler.add_job(task_publish_post, 'cron', hour=9, minute=0, data={'type': 'morning'})
+
+    # Öğle: 12:00 Hazırla -> 13:00 Paylaş (Python Serisi)
+    scheduler.add_job(task_prepare_draft, 'cron', hour=12, minute=0, data={'type': 'noon'})
+    scheduler.add_job(task_publish_post, 'cron', hour=13, minute=0, data={'type': 'noon'})
+
+    # Akşam: 17:00 Hazırla -> 18:00 Paylaş (Alıştırma)
+    scheduler.add_job(task_prepare_draft, 'cron', hour=17, minute=0, data={'type': 'evening'})
+    scheduler.add_job(task_publish_post, 'cron', hour=18, minute=0, data={'type': 'evening'})
+
+    # Test: 18:00 Hazırla -> 19:00 Paylaş (Konuyla ilgili Quiz - Posttan 1 saat sonra)
+    scheduler.add_job(task_prepare_draft, 'cron', hour=18, minute=0, data={'type': 'quiz'})
+    scheduler.add_job(task_publish_post, 'cron', hour=19, minute=0, data={'type': 'quiz'})
+
+    scheduler.start()
+
+    # Botu çalıştır
+    print("Bot çalışıyor...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n👋 Bot durduruldu.")
-    except Exception as e:
-        print(f"❌ Beklenmeyen hata: {e}")
+    main()
