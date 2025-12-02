@@ -1,3 +1,6 @@
-python-telegram-bot==21.0
-google-generativeai==0.8.3
-asyncio
+python-telegram-bot[job-queue]
+google-generativeai
+psycopg2-binary
+apscheduler
+pytz
+    * Bu iki dosyayı GitHub'a yükle.
